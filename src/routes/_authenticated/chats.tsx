@@ -17,7 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_authenticated/chats")({
-  component: ChatsLayout;
+  component: ChatsLayout,
 });
 
 type ChatRow = {
