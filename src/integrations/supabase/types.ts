@@ -134,6 +134,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      is_chat_creator: {
+        Args: { _chat_id: string; _user_id: string }
+        Returns: boolean
+      }
       is_chat_member: {
         Args: { _chat_id: string; _user_id: string }
         Returns: boolean
