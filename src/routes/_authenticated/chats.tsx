@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { CircleUserRound, LogOut, MessageSquarePlus, Radio, Search, Users } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/logo.png";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -44,15 +43,6 @@ type ChatRow = {
   }[];
   preview: string | null;
 };
-
-function initials(name: string) {
-  return name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
 
 function chatAvatar(chat: ChatRow, myId: string) {
   if (chat.is_group) return null;
