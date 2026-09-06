@@ -58,13 +58,15 @@ function ChatRoom() {
   const [title, setTitle] = useState("Conversa");
   const [subtitle, setSubtitle] = useState("");
   const [otherId, setOtherId] = useState<string | null>(null);
+  const [memberIds, setMemberIds] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const [recording, setRecording] = useState(false);
   const [sendingMedia, setSendingMedia] = useState(false);
-  const { startCall } = useCalls();
+  const { startCall, startGroupCall } = useCalls();
+
 
   useEffect(() => {
     let active = true;
@@ -77,6 +79,7 @@ function ChatRoom() {
       if (!active) return;
       if (chat) {
         const row = chat as any;
+        setMemberIds(((row.chat_members ?? []) as any[]).map((m) => m.user_id));
         if (row.is_group) {
           setTitle(row.name ?? "Grupo");
           setSubtitle(`${row.chat_members?.length ?? 0} participantes`);
@@ -88,6 +91,7 @@ function ChatRoom() {
           setOtherId(other?.user_id ?? null);
         }
       }
+
       const { data } = await supabase
         .from("messages")
         .select("id, chat_id, sender_id, content, created_at, media_url, media_type, media_duration")
