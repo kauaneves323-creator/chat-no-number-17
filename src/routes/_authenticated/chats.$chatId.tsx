@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useCalls } from "@/lib/calls";
 
 export const Route = createFileRoute("/_authenticated/chats/$chatId")({
   component: ChatRoom,
