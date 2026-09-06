@@ -79,6 +79,7 @@ function ChatRoom() {
       if (!active) return;
       if (chat) {
         const row = chat as any;
+        setMemberIds(((row.chat_members ?? []) as any[]).map((m) => m.user_id));
         if (row.is_group) {
           setTitle(row.name ?? "Grupo");
           setSubtitle(`${row.chat_members?.length ?? 0} participantes`);
@@ -90,6 +91,7 @@ function ChatRoom() {
           setOtherId(other?.user_id ?? null);
         }
       }
+
       const { data } = await supabase
         .from("messages")
         .select("id, chat_id, sender_id, content, created_at, media_url, media_type, media_duration")
