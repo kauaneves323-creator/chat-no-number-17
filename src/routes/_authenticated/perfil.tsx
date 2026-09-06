@@ -53,7 +53,7 @@ function ProfilePage() {
     setSaving(true);
     const { error } = await supabase
       .from("profiles")
-      .update({ display_name: displayName.trim() || profile?.username, about: about.trim() })
+      .update({ display_name: displayName.trim() || profile?.username || "Sem nome", about: about.trim() })
       .eq("id", user.id);
     setSaving(false);
     if (error) {

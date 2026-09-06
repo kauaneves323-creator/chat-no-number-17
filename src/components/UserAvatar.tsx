@@ -15,9 +15,9 @@ export function UserAvatar({
   name,
   className,
 }: {
-  path?: string | null;
+  path?: string | null | undefined;
   name: string;
-  className?: string;
+  className?: string | undefined;
 }) {
   const url = useSignedUrl(path);
   return (
