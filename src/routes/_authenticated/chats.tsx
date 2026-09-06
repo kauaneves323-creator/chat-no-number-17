@@ -19,8 +19,18 @@ import { CallsProvider } from "@/lib/calls";
 import { CallOverlay } from "@/components/CallOverlay";
 
 export const Route = createFileRoute("/_authenticated/chats")({
-  component: ChatsLayout,
+  component: ChatsShell,
 });
+
+function ChatsShell() {
+  return (
+    <CallsProvider>
+      <ChatsLayout />
+      <CallOverlay />
+    </CallsProvider>
+  );
+}
+
 
 type ChatRow = {
   id: string;
