@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedChatsRouteImport } from './routes/_authenticated/chats'
+import { Route as AuthenticatedPerfilRouteImport } from './routes/_authenticated/perfil'
+import { Route as AuthenticatedStoriesRouteImport } from './routes/_authenticated/stories'
 import { Route as AuthenticatedChatsIndexRouteImport } from './routes/_authenticated/chats.index'
 import { Route as AuthenticatedChatsChatIdRouteImport } from './routes/_authenticated/chats.$chatId'
 
@@ -35,6 +37,16 @@ const AuthenticatedChatsRoute = AuthenticatedChatsRouteImport.update({
   path: '/chats',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedPerfilRoute = AuthenticatedPerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedStoriesRoute = AuthenticatedStoriesRouteImport.update({
+  id: '/stories',
+  path: '/stories',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedChatsIndexRoute = AuthenticatedChatsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -51,12 +63,16 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/chats': typeof AuthenticatedChatsRouteWithChildren
+  '/perfil': typeof AuthenticatedPerfilRoute
+  '/stories': typeof AuthenticatedStoriesRoute
   '/chats/$chatId': typeof AuthenticatedChatsChatIdRoute
   '/chats/': typeof AuthenticatedChatsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/perfil': typeof AuthenticatedPerfilRoute
+  '/stories': typeof AuthenticatedStoriesRoute
   '/chats/$chatId': typeof AuthenticatedChatsChatIdRoute
   '/chats': typeof AuthenticatedChatsIndexRoute
 }
@@ -66,20 +82,31 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/chats': typeof AuthenticatedChatsRouteWithChildren
+  '/_authenticated/perfil': typeof AuthenticatedPerfilRoute
+  '/_authenticated/stories': typeof AuthenticatedStoriesRoute
   '/_authenticated/chats/$chatId': typeof AuthenticatedChatsChatIdRoute
   '/_authenticated/chats/': typeof AuthenticatedChatsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/chats' | '/chats/$chatId' | '/chats/'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/chats'
+    | '/perfil'
+    | '/stories'
+    | '/chats/$chatId'
+    | '/chats/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/chats/$chatId' | '/chats'
+  to: '/' | '/auth' | '/perfil' | '/stories' | '/chats/$chatId' | '/chats'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/chats'
+    | '/_authenticated/perfil'
+    | '/_authenticated/stories'
     | '/_authenticated/chats/$chatId'
     | '/_authenticated/chats/'
   fileRoutesById: FileRoutesById
@@ -120,6 +147,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChatsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/perfil': {
+      id: '/_authenticated/perfil'
+      path: '/perfil'
+      fullPath: '/perfil'
+      preLoaderRoute: typeof AuthenticatedPerfilRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/stories': {
+      id: '/_authenticated/stories'
+      path: '/stories'
+      fullPath: '/stories'
+      preLoaderRoute: typeof AuthenticatedStoriesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/chats/': {
       id: '/_authenticated/chats/'
       path: '/'
@@ -152,10 +193,14 @@ const AuthenticatedChatsRouteWithChildren =
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedChatsRoute: typeof AuthenticatedChatsRouteWithChildren
+  AuthenticatedPerfilRoute: typeof AuthenticatedPerfilRoute
+  AuthenticatedStoriesRoute: typeof AuthenticatedStoriesRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChatsRoute: AuthenticatedChatsRouteWithChildren,
+  AuthenticatedPerfilRoute: AuthenticatedPerfilRoute,
+  AuthenticatedStoriesRoute: AuthenticatedStoriesRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

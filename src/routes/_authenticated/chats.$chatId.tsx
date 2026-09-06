@@ -1,12 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Phone, Send, Video } from "lucide-react";
+import { ArrowLeft, ImagePlus, Mic, Phone, Send, Square, Video } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { extensionOf, uploadMedia, useSignedUrl } from "@/lib/media";
 import { useCalls } from "@/lib/calls";
 
 export const Route = createFileRoute("/_authenticated/chats/$chatId")({
@@ -19,7 +20,24 @@ type Message = {
   sender_id: string;
   content: string;
   created_at: string;
+  media_url: string | null;
+  media_type: string | null;
+  media_duration: number | null;
 };
+
+function MessageMedia({ path, kind }: { path: string; kind: string }) {
+  const url = useSignedUrl(path);
+  if (!url) return <div className="h-40 w-56 animate-pulse rounded-lg bg-black/10" />;
+  if (kind === "audio") return <audio controls src={url} className="w-56" />;
+  return (
+    <img
+      src={url}
+      alt="Foto enviada na conversa"
+      loading="lazy"
+      className="max-h-72 rounded-lg object-cover"
+    />
+  );
+}
 
 function initials(name: string) {
   return name
@@ -42,6 +60,10 @@ function ChatRoom() {
   const [otherId, setOtherId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [sendingMedia, setSendingMedia] = useState(false);
   const { startCall } = useCalls();
 
   useEffect(() => {
@@ -68,7 +90,7 @@ function ChatRoom() {
       }
       const { data } = await supabase
         .from("messages")
-        .select("id, chat_id, sender_id, content, created_at")
+        .select("id, chat_id, sender_id, content, created_at, media_url, media_type, media_duration")
         .eq("chat_id", chatId)
         .order("created_at", { ascending: true });
       if (active) setMessages((data as Message[]) ?? []);
@@ -113,6 +135,53 @@ function ChatRoom() {
     if (error) {
       toast.error("A mensagem não foi enviada.");
       setDraft(text);
+    }
+  }
+
+  async function sendMedia(blob: Blob, kind: "image" | "audio", ext: string, duration?: number) {
+    if (!myId) return;
+    setSendingMedia(true);
+    try {
+      const path = await uploadMedia(blob, myId, "chat", ext);
+      const { error } = await supabase.from("messages").insert({
+        chat_id: chatId,
+        sender_id: myId,
+        content: "",
+        media_url: path,
+        media_type: kind,
+        ...(duration ? { media_duration: duration } : {}),
+      });
+      if (error) throw new Error(error.message);
+    } catch {
+      toast.error("Não foi possível enviar o arquivo.");
+    } finally {
+      setSendingMedia(false);
+    }
+  }
+
+  async function toggleRecording() {
+    if (recording) {
+      recorderRef.current?.stop();
+      setRecording(false);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      const startedAt = Date.now();
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        const seconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+        void sendMedia(blob, "audio", "webm", seconds);
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch {
+      toast.error("Permita o microfone para gravar áudio.");
     }
   }
 
@@ -185,7 +254,14 @@ function ChatRoom() {
                     : "bg-bubble-in text-bubble-in-foreground rounded-bl-sm"
                 }`}
               >
-                <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p>
+                {message.media_url && message.media_type && (
+                  <div className="mb-1">
+                    <MessageMedia path={message.media_url} kind={message.media_type} />
+                  </div>
+                )}
+                {message.content && (
+                  <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p>
+                )}
                 <p className="mt-1 text-right text-[10px] opacity-60">
                   {new Date(message.created_at).toLocaleTimeString("pt-BR", {
                     hour: "2-digit",
@@ -206,6 +282,38 @@ function ChatRoom() {
           placeholder="Mensagem"
           className="rounded-full"
         />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const picked = e.target.files?.[0];
+            if (picked) void sendMedia(picked, "image", extensionOf(picked, "jpg"));
+            e.target.value = "";
+          }}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="rounded-full"
+          aria-label="Enviar foto"
+          disabled={sendingMedia}
+          onClick={() => fileRef.current?.click()}
+        >
+          <ImagePlus className="h-5 w-5" />
+        </Button>
+        <Button
+          type="button"
+          variant={recording ? "destructive" : "ghost"}
+          size="icon"
+          className="rounded-full"
+          aria-label={recording ? "Parar gravação" : "Gravar áudio"}
+          onClick={() => void toggleRecording()}
+        >
+          {recording ? <Square className="h-4 w-4" /> : <Mic className="h-5 w-5" />}
+        </Button>
         <Button type="submit" size="icon" className="rounded-full" aria-label="Enviar">
           <Send className="h-4 w-4" />
         </Button>

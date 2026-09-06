@@ -1,9 +1,8 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { LogOut, MessageSquarePlus, Search } from "lucide-react";
+import { CircleUserRound, LogOut, MessageSquarePlus, Radio, Search, Users } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/logo.png";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { CallsProvider } from "@/lib/calls";
 import { CallOverlay } from "@/components/CallOverlay";
+import { UserAvatar } from "@/components/UserAvatar";
 
 export const Route = createFileRoute("/_authenticated/chats")({
   component: ChatsShell,
@@ -37,17 +37,16 @@ type ChatRow = {
   name: string | null;
   is_group: boolean;
   last_message_at: string;
-  members: { user_id: string; profile: { username: string; display_name: string } | null }[];
+  members: {
+    user_id: string;
+    profile: { username: string; display_name: string; avatar_url: string | null } | null;
+  }[];
   preview: string | null;
 };
 
-function initials(name: string) {
-  return name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+function chatAvatar(chat: ChatRow, myId: string) {
+  if (chat.is_group) return null;
+  return chat.members.find((m) => m.user_id !== myId)?.profile?.avatar_url ?? null;
 }
 
 export function chatTitle(chat: ChatRow, myId: string) {
@@ -65,6 +64,10 @@ function ChatsLayout() {
   const [chats, setChats] = useState<ChatRow[]>([]);
   const [filter, setFilter] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const [groupPicked, setGroupPicked] = useState<string[]>([]);
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<{ id: string; username: string; display_name: string }[]>(
     [],
@@ -86,7 +89,7 @@ function ChatsLayout() {
     const { data } = await supabase
       .from("chats")
       .select(
-        "id, name, is_group, last_message_at, chat_members(user_id, profiles(username, display_name)), messages(content, created_at)",
+        "id, name, is_group, last_message_at, chat_members(user_id, profiles(username, display_name, avatar_url)), messages(content, created_at, media_type)",
       )
       .in("id", ids)
       .order("last_message_at", { ascending: false });
@@ -104,7 +107,13 @@ function ChatsLayout() {
           user_id: m.user_id,
           profile: m.profiles,
         })),
-        preview: msgs[0]?.content ?? null,
+        preview:
+          msgs[0]?.content ||
+          (msgs[0]?.media_type === "audio"
+            ? "🎤 Áudio"
+            : msgs[0]?.media_type === "image"
+              ? "📷 Foto"
+              : null),
       };
     });
     setChats(mapped);
@@ -133,7 +142,7 @@ function ChatsLayout() {
   }, [myId]);
 
   useEffect(() => {
-    if (!dialogOpen) return;
+    if (!dialogOpen && !groupOpen) return;
     const term = search.trim().toLowerCase();
     let active = true;
     const run = async () => {
@@ -151,7 +160,7 @@ function ChatsLayout() {
     return () => {
       active = false;
     };
-  }, [search, dialogOpen, myId]);
+  }, [search, dialogOpen, groupOpen, myId]);
 
   async function startChat(otherId: string) {
     const existing = chats.find(
@@ -182,6 +191,39 @@ function ChatsLayout() {
       return;
     }
     setDialogOpen(false);
+    await loadChats();
+    navigate({ to: "/chats/$chatId", params: { chatId: chat.id } });
+  }
+
+  async function createGroup() {
+    const name = groupName.trim();
+    if (!name || groupPicked.length === 0) {
+      toast.info("Dê um nome ao grupo e escolha pelo menos uma pessoa.");
+      return;
+    }
+    setCreatingGroup(true);
+    const { data: chat, error } = await supabase
+      .from("chats")
+      .insert({ created_by: myId, is_group: true, name })
+      .select("id")
+      .single();
+    if (error || !chat) {
+      setCreatingGroup(false);
+      toast.error("Não foi possível criar o grupo.");
+      return;
+    }
+    const { error: memberError } = await supabase.from("chat_members").insert([
+      { chat_id: chat.id, user_id: myId },
+      ...groupPicked.map((id) => ({ chat_id: chat.id, user_id: id })),
+    ]);
+    setCreatingGroup(false);
+    if (memberError) {
+      toast.error("Não foi possível adicionar todo mundo.");
+      return;
+    }
+    setGroupOpen(false);
+    setGroupName("");
+    setGroupPicked([]);
     await loadChats();
     navigate({ to: "/chats/$chatId", params: { chatId: chat.id } });
   }
@@ -235,9 +277,7 @@ function ChatsLayout() {
                     onClick={() => void startChat(person.id)}
                     className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-muted"
                   >
-                    <Avatar>
-                      <AvatarFallback>{initials(person.display_name)}</AvatarFallback>
-                    </Avatar>
+                    <UserAvatar name={person.display_name} />
                     <span>
                       <span className="block text-sm font-medium">{person.display_name}</span>
                       <span className="block text-xs text-muted-foreground">
@@ -249,6 +289,81 @@ function ChatsLayout() {
               </div>
             </DialogContent>
           </Dialog>
+          <Dialog open={groupOpen} onOpenChange={setGroupOpen}>
+            <DialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-header-foreground hover:bg-header-foreground/15"
+                aria-label="Novo grupo"
+              >
+                <Users className="h-5 w-5" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Novo grupo</DialogTitle>
+              </DialogHeader>
+              <Input
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                placeholder="Nome do grupo"
+              />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar pessoas"
+              />
+              <div className="max-h-64 space-y-1 overflow-y-auto">
+                {results.map((person) => {
+                  const picked = groupPicked.includes(person.id);
+                  return (
+                    <button
+                      key={person.id}
+                      onClick={() =>
+                        setGroupPicked((prev) =>
+                          picked ? prev.filter((id) => id !== person.id) : [...prev, person.id],
+                        )
+                      }
+                      className={`flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors ${picked ? "bg-muted" : "hover:bg-muted"}`}
+                    >
+                      <UserAvatar name={person.display_name} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">
+                          {person.display_name}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          @{person.username}
+                        </span>
+                      </span>
+                      {picked && <span className="text-xs text-primary">selecionado</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <Button onClick={() => void createGroup()} disabled={creatingGroup}>
+                {creatingGroup ? "Criando…" : `Criar grupo (${groupPicked.length})`}
+              </Button>
+            </DialogContent>
+          </Dialog>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Stories"
+            className="text-header-foreground hover:bg-header-foreground/15"
+            onClick={() => navigate({ to: "/stories" })}
+          >
+            <Radio className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Meu perfil"
+            className="text-header-foreground hover:bg-header-foreground/15"
+            onClick={() => navigate({ to: "/perfil" })}
+          >
+            <CircleUserRound className="h-5 w-5" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -289,9 +404,7 @@ function ChatsLayout() {
               activeProps={{ className: "bg-muted" }}
               className="flex items-center gap-3 border-b border-border/60 px-4 py-3 transition-colors hover:bg-muted"
             >
-              <Avatar>
-                <AvatarFallback>{initials(chatTitle(chat, myId))}</AvatarFallback>
-              </Avatar>
+              <UserAvatar path={chatAvatar(chat, myId)} name={chatTitle(chat, myId)} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">
                   {chatTitle(chat, myId)}
