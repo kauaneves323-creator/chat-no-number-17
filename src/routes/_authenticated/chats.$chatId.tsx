@@ -140,7 +140,13 @@ function ChatRoom() {
           size="icon"
           aria-label="Chamada de vídeo"
           className="text-header-foreground hover:bg-header-foreground/15"
-          onClick={() => toast.info("Chamadas de vídeo chegam na próxima etapa.")}
+          onClick={() => {
+            if (!otherId) {
+              toast.info("Chamadas em grupo chegam depois.");
+              return;
+            }
+            startCall({ chatId, peerId: otherId, peerName: title, kind: "video" });
+          }}
         >
           <Video className="h-5 w-5" />
         </Button>
@@ -149,10 +155,17 @@ function ChatRoom() {
           size="icon"
           aria-label="Chamada de voz"
           className="text-header-foreground hover:bg-header-foreground/15"
-          onClick={() => toast.info("Chamadas de voz chegam na próxima etapa.")}
+          onClick={() => {
+            if (!otherId) {
+              toast.info("Chamadas em grupo chegam depois.");
+              return;
+            }
+            startCall({ chatId, peerId: otherId, peerName: title, kind: "voice" });
+          }}
         >
           <Phone className="h-5 w-5" />
         </Button>
+
       </header>
 
       <div className="flex-1 space-y-2 overflow-y-auto bg-chat-canvas px-3 py-4 md:px-8">
