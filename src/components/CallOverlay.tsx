@@ -102,12 +102,44 @@ export function CallOverlay() {
           : `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
   const showVideo = kind === "video" && (phase === "active" || phase === "connecting");
+  const showMesh = isGroup && (phase === "active" || phase === "connecting");
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-between bg-header/95 px-6 py-10 text-header-foreground backdrop-blur">
-      <audio ref={remoteAudio} autoPlay playsInline className="hidden" />
+      {!isGroup && <audio ref={remoteAudio} autoPlay playsInline className="hidden" />}
 
-      {showVideo ? (
+      {showMesh ? (
+        <div className="flex w-full max-w-3xl flex-1 flex-col gap-3">
+          <p className="text-center text-sm font-medium">
+            {peerName || "Grupo"} · {status} · {remotePeers.length + 1} na chamada
+          </p>
+          <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
+            {kind === "video" && (
+              <div className="relative overflow-hidden rounded-xl bg-black/50">
+                <video
+                  ref={localVideo}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="h-full w-full object-cover"
+                />
+                <p className="absolute bottom-1 left-2 text-xs font-medium drop-shadow">Você</p>
+              </div>
+            )}
+            {remotePeers.map((peer) => (
+              <PeerTile
+                key={peer.id}
+                stream={peer.stream}
+                name={peer.name}
+                video={kind === "video"}
+              />
+            ))}
+          </div>
+          {remotePeers.length === 0 && (
+            <p className="text-center text-sm opacity-80">Esperando o grupo entrar…</p>
+          )}
+        </div>
+      ) : showVideo ? (
         <div className="relative flex-1 w-full max-w-3xl overflow-hidden rounded-2xl bg-black/60">
           <video
             ref={remoteVideo}
@@ -132,9 +164,10 @@ export function CallOverlay() {
             <AvatarFallback>{initials(peerName)}</AvatarFallback>
           </Avatar>
           <p className="text-2xl font-semibold">{peerName || "Contato"}</p>
-          <p className="text-sm opacity-80">{status}</p>
+          <p className="text-sm opacity-80">{isGroup ? `Chamada do grupo · ${status}` : status}</p>
         </div>
       )}
+
 
       <div className="flex items-center gap-4">
         {phase === "incoming" ? (
