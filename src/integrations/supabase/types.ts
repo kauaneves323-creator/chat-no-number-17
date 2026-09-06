@@ -14,6 +14,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      calls: {
+        Row: {
+          callee_id: string
+          caller_id: string
+          chat_id: string
+          created_at: string
+          ended_at: string | null
+          id: string
+          kind: string
+          started_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          callee_id: string
+          caller_id: string
+          chat_id: string
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          kind?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          callee_id?: string
+          caller_id?: string
+          chat_id?: string
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          kind?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calls_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_members: {
         Row: {
           chat_id: string
