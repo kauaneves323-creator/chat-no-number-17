@@ -39,8 +39,10 @@ function ChatRoom() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [title, setTitle] = useState("Conversa");
   const [subtitle, setSubtitle] = useState("");
+  const [otherId, setOtherId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { startCall } = useCalls();
 
   useEffect(() => {
     let active = true;
@@ -56,10 +58,12 @@ function ChatRoom() {
         if (row.is_group) {
           setTitle(row.name ?? "Grupo");
           setSubtitle(`${row.chat_members?.length ?? 0} participantes`);
+          setOtherId(null);
         } else {
           const other = (row.chat_members ?? []).find((m: any) => m.user_id !== myId);
           setTitle(other?.profiles?.display_name ?? "Conversa");
           setSubtitle(other?.profiles?.username ? `@${other.profiles.username}` : "");
+          setOtherId(other?.user_id ?? null);
         }
       }
       const { data } = await supabase
