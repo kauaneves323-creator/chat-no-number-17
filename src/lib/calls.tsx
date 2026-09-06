@@ -26,19 +26,30 @@ type CallRow = {
 
 export type CallPhase = "idle" | "outgoing" | "incoming" | "connecting" | "active";
 
+export type RemotePeer = { id: string; stream: MediaStream; name: string };
+
 type CallState = {
   phase: CallPhase;
   kind: CallKind;
   call: CallRow | null;
   peerName: string;
+  isGroup: boolean;
+  groupChatId: string | null;
   micOn: boolean;
   camOn: boolean;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  remotePeers: RemotePeer[];
 };
 
 type CallsValue = CallState & {
   startCall: (args: { chatId: string; peerId: string; peerName: string; kind: CallKind }) => void;
+  startGroupCall: (args: {
+    chatId: string;
+    memberIds: string[];
+    chatName: string;
+    kind: CallKind;
+  }) => void;
   acceptCall: () => void;
   declineCall: () => void;
   hangUp: () => void;
@@ -61,10 +72,13 @@ const initialState: CallState = {
   kind: "voice",
   call: null,
   peerName: "",
+  isGroup: false,
+  groupChatId: null,
   micOn: true,
   camOn: true,
   localStream: null,
   remoteStream: null,
+  remotePeers: [],
 };
 
 export function CallsProvider({ children }: { children: ReactNode }) {
@@ -77,6 +91,10 @@ export function CallsProvider({ children }: { children: ReactNode }) {
   const localRef = useRef<MediaStream | null>(null);
   const pendingIce = useRef<RTCIceCandidateInit[]>([]);
   const ringtoneRef = useRef<{ ctx: AudioContext; stop: () => void } | null>(null);
+  // malha de chamadas em grupo
+  const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const meshIce = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  const namesRef = useRef<Map<string, string>>(new Map());
 
   const stopRingtone = useCallback(() => {
     ringtoneRef.current?.stop();
@@ -130,6 +148,15 @@ export function CallsProvider({ children }: { children: ReactNode }) {
     });
     pcRef.current?.close();
     pcRef.current = null;
+    peersRef.current.forEach((pc) => {
+      try {
+        pc.close();
+      } catch {
+        /* noop */
+      }
+    });
+    peersRef.current.clear();
+    meshIce.current.clear();
     localRef.current?.getTracks().forEach((t) => t.stop());
     localRef.current = null;
     pendingIce.current = [];
@@ -255,6 +282,164 @@ export function CallsProvider({ children }: { children: ReactNode }) {
     [cleanup, drainIce, send],
   );
 
+  /* ---------------- chamadas em grupo (malha) ---------------- */
+
+  const dropPeer = useCallback((peerId: string) => {
+    const pc = peersRef.current.get(peerId);
+    if (pc) {
+      try {
+        pc.close();
+      } catch {
+        /* noop */
+      }
+      peersRef.current.delete(peerId);
+    }
+    meshIce.current.delete(peerId);
+    setState((s) => ({ ...s, remotePeers: s.remotePeers.filter((p) => p.id !== peerId) }));
+  }, []);
+
+  const loadPeerName = useCallback((peerId: string) => {
+    if (namesRef.current.has(peerId)) return;
+    namesRef.current.set(peerId, "Participante");
+    void supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", peerId)
+      .maybeSingle()
+      .then(({ data }) => {
+        const name = data?.display_name;
+        if (!name) return;
+        namesRef.current.set(peerId, name);
+        setState((s) => ({
+          ...s,
+          remotePeers: s.remotePeers.map((p) => (p.id === peerId ? { ...p, name } : p)),
+        }));
+      });
+  }, []);
+
+  const ensureMeshPeer = useCallback(
+    (peerId: string) => {
+      const existing = peersRef.current.get(peerId);
+      if (existing) return existing;
+      const pc = new RTCPeerConnection(RTC_CONFIG);
+      peersRef.current.set(peerId, pc);
+      localRef.current?.getTracks().forEach((track) => pc.addTrack(track, localRef.current!));
+      const remote = new MediaStream();
+      loadPeerName(peerId);
+      setState((s) => ({
+        ...s,
+        remotePeers: s.remotePeers.some((p) => p.id === peerId)
+          ? s.remotePeers
+          : [...s.remotePeers, { id: peerId, stream: remote, name: namesRef.current.get(peerId) ?? "Participante" }],
+      }));
+      pc.ontrack = (event) => {
+        event.streams[0]?.getTracks().forEach((t) => {
+          if (!remote.getTracks().includes(t)) remote.addTrack(t);
+        });
+        setState((s) => ({ ...s, phase: "active" }));
+      };
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          send("mesh-ice", { from: myId, to: peerId, candidate: event.candidate.toJSON() });
+        }
+      };
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "connected") {
+          stopRingtone();
+          setState((s) => ({ ...s, phase: "active" }));
+        }
+        if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+          dropPeer(peerId);
+        }
+      };
+      return pc;
+    },
+    [dropPeer, loadPeerName, myId, send, stopRingtone],
+  );
+
+  const offerTo = useCallback(
+    (peerId: string) => {
+      void (async () => {
+        const pc = ensureMeshPeer(peerId);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        send("mesh-sdp", { from: myId, to: peerId, sdp: pc.localDescription });
+      })();
+    },
+    [ensureMeshPeer, myId, send],
+  );
+
+  const openMesh = useCallback(
+    (chatId: string) => {
+      const channel = supabase.channel(`mesh-${chatId}`, {
+        config: { broadcast: { self: false } },
+      });
+      channelRef.current = channel;
+
+      channel.on("broadcast", { event: "mesh-join" }, ({ payload }) => {
+        const from = (payload as any).from as string;
+        if (!from || from === myId) return;
+        send("mesh-here", { from: myId, to: from });
+        if (myId > from) offerTo(from);
+      });
+
+      channel.on("broadcast", { event: "mesh-here" }, ({ payload }) => {
+        const { from, to } = payload as any;
+        if (to !== myId || !from) return;
+        if (myId > from) offerTo(from);
+        else ensureMeshPeer(from);
+      });
+
+      channel.on("broadcast", { event: "mesh-sdp" }, ({ payload }) => {
+        const { from, to, sdp } = payload as any;
+        if (to !== myId || !from || !sdp) return;
+        void (async () => {
+          const pc = ensureMeshPeer(from);
+          await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+          const queued = meshIce.current.get(from) ?? [];
+          for (const c of queued) {
+            try {
+              await pc.addIceCandidate(c);
+            } catch {
+              /* noop */
+            }
+          }
+          meshIce.current.set(from, []);
+          if (sdp.type === "offer") {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            send("mesh-sdp", { from: myId, to: from, sdp: pc.localDescription });
+          }
+        })();
+      });
+
+      channel.on("broadcast", { event: "mesh-ice" }, ({ payload }) => {
+        const { from, to, candidate } = payload as any;
+        if (to !== myId || !from || !candidate) return;
+        const pc = peersRef.current.get(from);
+        if (pc?.remoteDescription?.type) {
+          void pc.addIceCandidate(candidate).catch(() => undefined);
+        } else {
+          const list = meshIce.current.get(from) ?? [];
+          list.push(candidate);
+          meshIce.current.set(from, list);
+        }
+      });
+
+      channel.on("broadcast", { event: "mesh-bye" }, ({ payload }) => {
+        const from = (payload as any).from as string;
+        if (from) dropPeer(from);
+      });
+
+      channel.subscribe((status) => {
+        if (status === "SUBSCRIBED") send("mesh-join", { from: myId });
+      });
+
+      return channel;
+    },
+    [dropPeer, ensureMeshPeer, myId, offerTo, send],
+  );
+
   const startCall = useCallback(
     ({
       chatId,
@@ -295,19 +480,76 @@ export function CallsProvider({ children }: { children: ReactNode }) {
     [cleanup, createPeer, getMedia, myId, openChannel, playRingtone, state.phase],
   );
 
+  const startGroupCall = useCallback(
+    ({
+      chatId,
+      memberIds,
+      chatName,
+      kind,
+    }: {
+      chatId: string;
+      memberIds: string[];
+      chatName: string;
+      kind: CallKind;
+    }) => {
+      if (state.phase !== "idle") {
+        toast.info("Você já está em uma chamada.");
+        return;
+      }
+      const others = memberIds.filter((id) => id && id !== myId);
+      if (others.length === 0) {
+        toast.info("Este grupo ainda não tem outros participantes.");
+        return;
+      }
+      void (async () => {
+        try {
+          setState((s) => ({
+            ...s,
+            phase: "connecting",
+            kind,
+            peerName: chatName,
+            isGroup: true,
+            groupChatId: chatId,
+          }));
+          await getMedia(kind);
+          const { error } = await supabase.from("calls").insert(
+            others.map((callee) => ({
+              chat_id: chatId,
+              caller_id: myId,
+              callee_id: callee,
+              kind,
+            })),
+          );
+          if (error) throw new Error(error.message);
+          openMesh(chatId);
+          playRingtone();
+        } catch {
+          toast.error("Não foi possível iniciar a chamada do grupo.");
+          cleanup();
+        }
+      })();
+    },
+    [cleanup, getMedia, myId, openMesh, playRingtone, state.phase],
+  );
+
   const acceptCall = useCallback(() => {
     const call = state.call;
     if (!call) return;
+    const group = state.isGroup;
     void (async () => {
       try {
         stopRingtone();
         setState((s) => ({ ...s, phase: "connecting" }));
         const stream = await getMedia(call.kind);
-        createPeer(stream);
-        const channel = openChannel(call.id, "callee");
-        channel.subscribe((status) => {
-          if (status === "SUBSCRIBED") send("ready", {});
-        });
+        if (group) {
+          openMesh(call.chat_id);
+        } else {
+          createPeer(stream);
+          const channel = openChannel(call.id, "callee");
+          channel.subscribe((status) => {
+            if (status === "SUBSCRIBED") send("ready", {});
+          });
+        }
         await supabase
           .from("calls")
           .update({ status: "accepted", started_at: new Date().toISOString() })
@@ -317,7 +559,17 @@ export function CallsProvider({ children }: { children: ReactNode }) {
         cleanup();
       }
     })();
-  }, [cleanup, createPeer, getMedia, openChannel, send, state.call, stopRingtone]);
+  }, [
+    cleanup,
+    createPeer,
+    getMedia,
+    openChannel,
+    openMesh,
+    send,
+    state.call,
+    state.isGroup,
+    stopRingtone,
+  ]);
 
   const declineCall = useCallback(() => {
     const call = state.call;
@@ -332,7 +584,8 @@ export function CallsProvider({ children }: { children: ReactNode }) {
 
   const hangUp = useCallback(() => {
     const call = state.call;
-    send("hangup", {});
+    if (state.isGroup) send("mesh-bye", { from: myId });
+    else send("hangup", {});
     cleanup();
     if (call) {
       void supabase
@@ -340,7 +593,7 @@ export function CallsProvider({ children }: { children: ReactNode }) {
         .update({ status: "ended", ended_at: new Date().toISOString() })
         .eq("id", call.id);
     }
-  }, [cleanup, send, state.call]);
+  }, [cleanup, myId, send, state.call, state.isGroup]);
 
   const toggleMic = useCallback(() => {
     const track = localRef.current?.getAudioTracks()[0];
@@ -377,13 +630,33 @@ export function CallsProvider({ children }: { children: ReactNode }) {
             return { ...initialState, phase: "incoming", kind: call.kind, call };
           });
           void supabase
+            .from("chats")
+            .select("is_group, name")
+            .eq("id", call.chat_id)
+            .maybeSingle()
+            .then(({ data }) => {
+              if (!data?.is_group) return;
+              setState((s) =>
+                s.call?.id === call.id
+                  ? {
+                      ...s,
+                      isGroup: true,
+                      groupChatId: call.chat_id,
+                      peerName: data.name ?? "Grupo",
+                    }
+                  : s,
+              );
+            });
+          void supabase
             .from("profiles")
             .select("display_name")
             .eq("id", call.caller_id)
             .maybeSingle()
             .then(({ data }) => {
               if (data?.display_name) {
-                setState((s) => (s.call?.id === call.id ? { ...s, peerName: data.display_name } : s));
+                setState((s) =>
+                  s.call?.id === call.id && !s.isGroup ? { ...s, peerName: data.display_name } : s,
+                );
               }
             });
           playRingtone();
@@ -396,7 +669,7 @@ export function CallsProvider({ children }: { children: ReactNode }) {
           const call = payload.new as CallRow;
           setState((s) => {
             if (s.call?.id !== call.id) return s;
-            if (call.status === "declined") {
+            if (call.status === "declined" && !s.isGroup) {
               toast.info("Chamada recusada.");
               setTimeout(cleanup, 0);
             }
@@ -419,13 +692,23 @@ export function CallsProvider({ children }: { children: ReactNode }) {
     () => ({
       ...state,
       startCall,
+      startGroupCall,
       acceptCall,
       declineCall,
       hangUp,
       toggleMic,
       toggleCam,
     }),
-    [acceptCall, declineCall, hangUp, startCall, state, toggleCam, toggleMic],
+    [
+      acceptCall,
+      declineCall,
+      hangUp,
+      startCall,
+      startGroupCall,
+      state,
+      toggleCam,
+      toggleMic,
+    ],
   );
 
   return <CallsContext.Provider value={value}>{children}</CallsContext.Provider>;
