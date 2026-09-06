@@ -78,6 +78,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       profile,
       loading,
+      refreshProfile: async () => {
+        if (!userId) return;
+        const { data } = await supabase
+          .from("profiles")
+          .select("id, username, display_name, avatar_url, about")
+          .eq("id", userId)
+          .maybeSingle();
+        setProfile((data as Profile) ?? null);
+      },
       signIn: async (username, password) => {
         const clean = normalizeUsername(username);
         const { error } = await supabase.auth.signInWithPassword({
