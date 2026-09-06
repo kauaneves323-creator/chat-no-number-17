@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useCalls } from "@/lib/calls";
 
 export const Route = createFileRoute("/_authenticated/chats/$chatId")({
   component: ChatRoom,
@@ -38,8 +39,10 @@ function ChatRoom() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [title, setTitle] = useState("Conversa");
   const [subtitle, setSubtitle] = useState("");
+  const [otherId, setOtherId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { startCall } = useCalls();
 
   useEffect(() => {
     let active = true;
@@ -55,10 +58,12 @@ function ChatRoom() {
         if (row.is_group) {
           setTitle(row.name ?? "Grupo");
           setSubtitle(`${row.chat_members?.length ?? 0} participantes`);
+          setOtherId(null);
         } else {
           const other = (row.chat_members ?? []).find((m: any) => m.user_id !== myId);
           setTitle(other?.profiles?.display_name ?? "Conversa");
           setSubtitle(other?.profiles?.username ? `@${other.profiles.username}` : "");
+          setOtherId(other?.user_id ?? null);
         }
       }
       const { data } = await supabase
@@ -135,7 +140,13 @@ function ChatRoom() {
           size="icon"
           aria-label="Chamada de vídeo"
           className="text-header-foreground hover:bg-header-foreground/15"
-          onClick={() => toast.info("Chamadas de vídeo chegam na próxima etapa.")}
+          onClick={() => {
+            if (!otherId) {
+              toast.info("Chamadas em grupo chegam depois.");
+              return;
+            }
+            startCall({ chatId, peerId: otherId, peerName: title, kind: "video" });
+          }}
         >
           <Video className="h-5 w-5" />
         </Button>
@@ -144,10 +155,17 @@ function ChatRoom() {
           size="icon"
           aria-label="Chamada de voz"
           className="text-header-foreground hover:bg-header-foreground/15"
-          onClick={() => toast.info("Chamadas de voz chegam na próxima etapa.")}
+          onClick={() => {
+            if (!otherId) {
+              toast.info("Chamadas em grupo chegam depois.");
+              return;
+            }
+            startCall({ chatId, peerId: otherId, peerName: title, kind: "voice" });
+          }}
         >
           <Phone className="h-5 w-5" />
         </Button>
+
       </header>
 
       <div className="flex-1 space-y-2 overflow-y-auto bg-chat-canvas px-3 py-4 md:px-8">

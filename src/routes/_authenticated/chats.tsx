@@ -15,10 +15,22 @@ import {
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { CallsProvider } from "@/lib/calls";
+import { CallOverlay } from "@/components/CallOverlay";
 
 export const Route = createFileRoute("/_authenticated/chats")({
-  component: ChatsLayout,
+  component: ChatsShell,
 });
+
+function ChatsShell() {
+  return (
+    <CallsProvider>
+      <ChatsLayout />
+      <CallOverlay />
+    </CallsProvider>
+  );
+}
+
 
 type ChatRow = {
   id: string;
