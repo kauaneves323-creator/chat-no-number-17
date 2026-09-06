@@ -58,13 +58,15 @@ function ChatRoom() {
   const [title, setTitle] = useState("Conversa");
   const [subtitle, setSubtitle] = useState("");
   const [otherId, setOtherId] = useState<string | null>(null);
+  const [memberIds, setMemberIds] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const [recording, setRecording] = useState(false);
   const [sendingMedia, setSendingMedia] = useState(false);
-  const { startCall } = useCalls();
+  const { startCall, startGroupCall } = useCalls();
+
 
   useEffect(() => {
     let active = true;
