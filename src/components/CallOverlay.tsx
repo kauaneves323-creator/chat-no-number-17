@@ -13,11 +13,46 @@ function initials(name: string) {
     .toUpperCase();
 }
 
+function PeerTile({
+  stream,
+  name,
+  video,
+}: {
+  stream: MediaStream;
+  name: string;
+  video: boolean;
+}) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.srcObject = stream;
+  }, [stream]);
+  return (
+    <div className="relative overflow-hidden rounded-xl bg-black/50">
+      <video
+        ref={ref}
+        autoPlay
+        playsInline
+        className={video ? "h-full w-full object-cover" : "hidden"}
+      />
+      {!video && (
+        <div className="flex h-full min-h-28 items-center justify-center">
+          <Avatar className="h-16 w-16 text-xl">
+            <AvatarFallback>{initials(name)}</AvatarFallback>
+          </Avatar>
+        </div>
+      )}
+      <p className="absolute bottom-1 left-2 text-xs font-medium drop-shadow">{name}</p>
+    </div>
+  );
+}
+
 export function CallOverlay() {
   const {
     phase,
     kind,
     peerName,
+    isGroup,
+    remotePeers,
     micOn,
     camOn,
     localStream,
@@ -28,6 +63,7 @@ export function CallOverlay() {
     toggleMic,
     toggleCam,
   } = useCalls();
+
 
   const localVideo = useRef<HTMLVideoElement>(null);
   const remoteVideo = useRef<HTMLVideoElement>(null);
