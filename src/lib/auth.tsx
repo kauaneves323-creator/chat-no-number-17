@@ -18,6 +18,7 @@ type AuthValue = {
   signIn: (username: string, password: string) => Promise<void>;
   signUp: (username: string, password: string, displayName: string) => Promise<void>;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthValue | null>(null);
